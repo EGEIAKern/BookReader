@@ -1,0 +1,3 @@
+# Базовая версия работает только на stdlib (Python 3.10+).
+# Опционально для экспорта в Excel в Termux:
+#   pip install openpyxl
