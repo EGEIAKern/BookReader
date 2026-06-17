@@ -145,7 +145,7 @@ class BookApp(ctk.CTk):
     # ФУНКЦИЯ 1: Калькулятор прогресса книги
     # =================================================================
     def build_reading_calc(self, parent):
-        ctk.CTkLabel(parent, text="Прогресс чтения", font=ctk.CTkFont(size=28, weight="bold"),
+        ctk.CTkLabel(parent, text="BookReaderOldVersion", font=ctk.CTkFont(size=28, weight="bold"),
                      text_color=COLORS["text_main"]).pack(pady=(30, 10))
         ctk.CTkLabel(parent, text="Узнайте, сколько процентов книги вы уже прочитали", font=ctk.CTkFont(size=14),
                      text_color=COLORS["text_muted"]).pack(pady=(0, 30))
