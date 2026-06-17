@@ -5,6 +5,7 @@ from storage.storage import load_books, save_books
 from cli.display import clear_screen, ensure_utf8_stdout, pause, print_header
 from cli.library import LibraryScreen
 from cli.statistics import StatisticsScreen
+from cli.sync import SyncScreen
 from cli.tools import ToolsScreen
 
 
@@ -26,6 +27,7 @@ class BookTrackerApp:
                 "\n  1. Библиотека\n"
                 "  2. Статистика\n"
                 "  3. Инструменты\n"
+                "  4. Облако\n"
                 "  0. Выход"
             )
 
@@ -45,6 +47,10 @@ class BookTrackerApp:
                 StatisticsScreen(self.books, self.reading_log).run()
             elif choice == "3":
                 ToolsScreen().run()
+            elif choice == "4":
+                SyncScreen(self.books, self.reading_log).run()
+                self.books = load_books()
+                self.reading_log = load_reading_log()
             else:
                 pause("Неизвестная команда. Enter...")
 

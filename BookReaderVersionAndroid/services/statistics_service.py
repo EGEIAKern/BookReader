@@ -8,8 +8,11 @@ class StatisticsService:
     def compute_stats(books: list[Book]) -> dict:
         total_books = len(books)
         total_pages = sum(book.total_pages for book in books)
-        read_pages = sum(book.current_page for book in books)
-        completed = sum(1 for book in books if book.progress >= 100)
+        read_pages = sum(
+            book.effective_current_page if book.has_works else book.current_page
+            for book in books
+        )
+        completed = sum(1 for book in books if book.is_finished)
 
         percent = 0.0
         if total_pages:

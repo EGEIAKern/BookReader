@@ -1,3 +1,10 @@
 # Базовая версия работает только на stdlib (Python 3.10+).
 # Опционально для экспорта в Excel в Termux:
 #   pip install openpyxl
+#
+# Облачная синхронизация (ПК + телефон) — без доп. зависимостей:
+#   • Папка облака: Google Drive / Яндекс.Диск / Dropbox через клиент синхронизации
+#   • WebDAV: Яндекс.Диск (https://webdav.yandex.ru/), Nextcloud
+# Переменные окружения (опционально):
+#   BOOK_TRACKER_SYNC_FOLDER, BOOK_TRACKER_WEBDAV_URL,
+#   BOOK_TRACKER_WEBDAV_USER, BOOK_TRACKER_WEBDAV_PASSWORD

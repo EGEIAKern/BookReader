@@ -33,6 +33,29 @@ def print_success(message: str) -> None:
     print(f"\n✓ {message}")
 
 
+def print_section(title: str) -> None:
+    print(f"\n  ── {title} ──")
+
+
+def print_hint(message: str) -> None:
+    print(f"  · {message}")
+
+
+def print_form_step(step: int, total: int, title: str) -> None:
+    print(f"\n  Шаг {step} из {total} · {title}")
+    print("  " + "─" * 32)
+
+
+def print_key_value(label: str, value: str, *, empty: str = "—", width: int = 14) -> None:
+    display = value.strip() if value and value.strip() else empty
+    print(f"  {label:<{width}} {display}")
+
+
+def print_shortcuts(*shortcuts: tuple[str, str]) -> None:
+    parts = [f"[{key}] {label}" for key, label in shortcuts]
+    print(f"\n  {'  '.join(parts)}")
+
+
 def progress_bar(percent: float, width: int = 24) -> str:
     percent = max(0.0, min(100.0, percent))
     filled = round(width * percent / 100)
@@ -47,8 +70,16 @@ def horizontal_bar(value: float, max_value: float, width: int = 20) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def ask_int(prompt: str, *, min_value: int | None = None, max_value: int | None = None) -> int | None:
-    raw = input(f"{prompt}: ").strip()
+def ask_int(
+    prompt: str,
+    *,
+    min_value: int | None = None,
+    max_value: int | None = None,
+    hint: str | None = None,
+) -> int | None:
+    if hint:
+        print_hint(hint)
+    raw = input(f"  {prompt}: ").strip()
     if not raw:
         return None
     try:
@@ -76,20 +107,36 @@ def ask_float(prompt: str) -> float | None:
         return None
 
 
-def ask_text(prompt: str, *, required: bool = False) -> str | None:
-    raw = input(f"{prompt}: ").strip()
+def ask_text(
+    prompt: str,
+    *,
+    required: bool = False,
+    hint: str | None = None,
+    default: str | None = None,
+) -> str | None:
+    if hint:
+        print_hint(hint)
+    suffix = ""
+    if default:
+        suffix = f" [{default}]"
+    raw = input(f"  {prompt}{suffix}: ").strip()
+    if not raw and default is not None:
+        return default
     if required and not raw:
         print_error("Поле обязательно")
         return None
     return raw
 
 
-def ask_yes_no(prompt: str) -> bool:
+def ask_yes_no(prompt: str, *, default: bool = False) -> bool:
+    default_label = "д" if default else "н"
     while True:
-        raw = input(f"{prompt} (д/н): ").strip().lower()
+        raw = input(f"  {prompt} (д/н, Enter — {default_label}): ").strip().lower()
+        if raw == "":
+            return default
         if raw in {"д", "y", "yes", "да"}:
             return True
-        if raw in {"н", "n", "no", "нет", ""}:
+        if raw in {"н", "n", "no", "нет"}:
             return False
         print_error("Введите «д» или «н»")
 

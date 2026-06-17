@@ -1,4 +1,4 @@
-from models.book import calc_progress
+from models.progress import calc_progress
 
 
 class ReadingService:

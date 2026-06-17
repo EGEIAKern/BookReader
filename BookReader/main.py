@@ -12,6 +12,7 @@ from ui.pages.reading_page import ReadingPage
 from ui.pages.goal_page import GoalPage
 from ui.pages.percent_page import PercentPage
 from ui.pages.calculator_page import CalculatorPage
+from ui.sync_page import SyncPage
 
 from ui.colors import COLORS
 
@@ -71,6 +72,7 @@ class BookTrackerApp(ctk.CTk):
         self.btn_goal = self.create_nav_button("🎯 План чтения", self.show_goal)
         self.btn_percent = self.create_nav_button("📊 Страницы по %", self.show_percent)
         self.btn_calc = self.create_nav_button("🧮 Калькулятор", self.show_calculator)
+        self.btn_sync = self.create_nav_button("☁️ Облако", self.show_sync)
 
         self.books_count_label = ctk.CTkLabel(
             self.sidebar,
@@ -221,6 +223,18 @@ class BookTrackerApp(ctk.CTk):
         self.activate(self.btn_calc)
         self.clear_main(keep_stats=True)
         CalculatorPage(self.main)
+
+    def show_sync(self):
+        self.activate(self.btn_sync)
+        self.clear_main(keep_stats=True)
+        SyncPage(
+            self.main,
+            self.books,
+            self.reading_log,
+            on_sync_complete=self.update_sidebar_counter,
+            on_persist_books=self.persist_books,
+            on_persist_reading_log=self.persist_reading_log,
+        ).pack(fill="both", expand=True)
 
 
 if __name__ == "__main__":

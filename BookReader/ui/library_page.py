@@ -1,10 +1,25 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
+from models.work import WORK_STATUS_LABELS
 from services.export_service import ExportService
 from ui.colors import COLORS
-from ui.dialogs import AddBookDialog, EditBookDialog, SetPageDialog
-from ui.widgets import create_labeled_entry
+from ui.dialogs import (
+    AddBookDialog,
+    BookReviewDialog,
+    EditBookDialog,
+    ManageWorksDialog,
+    SetPageDialog,
+)
+from ui.widgets import create_labeled_entry, create_link_button
+
+
+WORK_STATUS_COLORS = {
+    "planned": COLORS["text_muted"],
+    "reading": COLORS["accent"],
+    "finished": COLORS["success"],
+    "skipped": COLORS["error"],
+}
 
 
 class LibraryPage:
@@ -120,6 +135,52 @@ class LibraryPage:
         for index, book in items:
             self.render_book_card(index, book)
 
+    def render_works_summary(self, parent, book):
+        works_frame = ctk.CTkFrame(parent, fg_color=COLORS["bg_main"], corner_radius=8)
+        works_frame.pack(fill="x", pady=(8, 0))
+
+        header = ctk.CTkFrame(works_frame, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 4))
+
+        finished = sum(1 for work in book.active_works if work.is_finished)
+        total_active = len(book.active_works)
+
+        ctk.CTkLabel(
+            header,
+            text=f"📖 Произведения: {finished}/{total_active} прочитано",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=COLORS["accent"],
+        ).pack(side="left")
+
+        for work in book.works:
+            row = ctk.CTkFrame(works_frame, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=2)
+
+            status_color = WORK_STATUS_COLORS.get(work.status, COLORS["text_muted"])
+            status_label = WORK_STATUS_LABELS.get(work.status, work.status)
+
+            if work.counts_toward_progress:
+                pages_text = f"{work.current_page}/{work.total_pages} стр."
+            else:
+                pages_text = f"{work.total_pages} стр."
+
+            ctk.CTkLabel(
+                row,
+                text=f"• {work.title}",
+                anchor="w",
+                text_color=COLORS["text_main"] if work.counts_toward_progress else COLORS["text_muted"],
+                font=ctk.CTkFont(size=12),
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                row,
+                text=f"{pages_text} · {status_label}",
+                text_color=status_color,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="right")
+
+        ctk.CTkLabel(works_frame, text="").pack(pady=2)
+
     def render_book_card(self, index, book):
         card = ctk.CTkFrame(self.list_frame, fg_color=COLORS["bg_card"])
         card.pack(fill="x", padx=10, pady=8)
@@ -143,10 +204,61 @@ class LibraryPage:
             text_color=COLORS["text_muted"],
         ).pack(anchor="w")
 
-        status_color = COLORS["success"] if book.progress >= 100 else COLORS["text_muted"]
+        if book.description:
+            ctk.CTkLabel(
+                info,
+                text=book.description,
+                anchor="w",
+                justify="left",
+                wraplength=520,
+                text_color=COLORS["text_muted"],
+                font=ctk.CTkFont(size=13),
+            ).pack(anchor="w", pady=(4, 0))
+
+        if book.marketplace_url:
+            create_link_button(info, book.marketplace_url)
+
+        if book.has_works:
+            self.render_works_summary(info, book)
+
+        if book.review:
+            review_frame = ctk.CTkFrame(info, fg_color=COLORS["bg_main"], corner_radius=8)
+            review_frame.pack(fill="x", pady=(8, 0))
+
+            ctk.CTkLabel(
+                review_frame,
+                text="💬 Моё мнение",
+                anchor="w",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLORS["success"],
+            ).pack(anchor="w", padx=10, pady=(8, 2))
+
+            ctk.CTkLabel(
+                review_frame,
+                text=book.review,
+                anchor="w",
+                justify="left",
+                wraplength=500,
+                text_color=COLORS["text_main"],
+                font=ctk.CTkFont(size=13),
+            ).pack(anchor="w", padx=10, pady=(0, 8))
+
+        if book.has_works:
+            pages_text = (
+                f"{book.effective_current_page} / {book.progress_total_pages} стр."
+            )
+            if (
+                book.total_pages > 0
+                and book.allocated_pages != book.total_pages
+            ):
+                pages_text += f" · произведения: {book.allocated_pages} стр."
+        else:
+            pages_text = f"{book.current_page} / {book.total_pages} страниц"
+
+        status_color = COLORS["success"] if book.is_finished else COLORS["text_muted"]
         ctk.CTkLabel(
             card,
-            text=f"{book.current_page} / {book.total_pages} страниц",
+            text=pages_text,
             text_color=status_color,
         ).pack(anchor="w", padx=15)
 
@@ -176,11 +288,18 @@ class LibraryPage:
             hover_color=COLORS["accent_hover"],
         ).pack(side="left", padx=4)
 
+        progress_command = (
+            (lambda i=index: self.manage_works(i))
+            if book.has_works
+            else (lambda i=index: self.set_page(i))
+        )
+        progress_label = "📖 Произведения" if book.has_works else "✏️ Прогресс"
+
         ctk.CTkButton(
             buttons,
-            text="✏️ Прогресс",
+            text=progress_label,
             width=110,
-            command=lambda i=index: self.set_page(i),
+            command=progress_command,
             fg_color=COLORS["bg_main"],
             hover_color=COLORS["accent_hover"],
         ).pack(side="left", padx=4)
@@ -245,6 +364,31 @@ class LibraryPage:
         if pages > 0 and self.on_record_reading:
             self.on_record_reading(pages)
 
+    def _prompt_review_if_completed(self, index, was_finished: bool) -> None:
+        book = self.books[index]
+        if book.is_finished and not was_finished and not book.review:
+            dialog = BookReviewDialog(self.parent.winfo_toplevel(), book)
+            self.parent.wait_window(dialog)
+            if dialog.result:
+                book.review = dialog.result
+                self._save()
+
+    def manage_works(self, index):
+        book = self.books[index]
+        was_finished = book.is_finished
+        old_page = book.effective_current_page
+
+        dialog = ManageWorksDialog(self.parent.winfo_toplevel(), book)
+        self.parent.wait_window(dialog)
+
+        if dialog.changed:
+            pages_delta = book.effective_current_page - old_page
+            self._record_reading(pages_delta)
+            self._save()
+            self.refresh()
+            self._prompt_review_if_completed(index, was_finished)
+            self.refresh()
+
     def add_book(self):
         dialog = AddBookDialog(self.parent.winfo_toplevel())
         self.parent.wait_window(dialog)
@@ -256,6 +400,9 @@ class LibraryPage:
             self.books.append(book)
             self._save()
             self.refresh()
+            if book.is_finished and not book.review:
+                self._prompt_review_if_completed(len(self.books) - 1, was_finished=False)
+                self.refresh()
 
     def edit_book(self, index):
         dialog = EditBookDialog(
@@ -265,15 +412,19 @@ class LibraryPage:
         self.parent.wait_window(dialog)
 
         if dialog.result:
-            old_page = self.books[index].current_page
+            was_finished = self.books[index].is_finished
+            old_page = self.books[index].effective_current_page
             updated = dialog.result
-            self._record_reading(updated.current_page - old_page)
+            self._record_reading(updated.effective_current_page - old_page)
             self.books[index] = updated
             self._save()
+            self.refresh()
+            self._prompt_review_if_completed(index, was_finished)
             self.refresh()
 
     def set_page(self, index):
         book = self.books[index]
+        was_finished = book.is_finished
         dialog = SetPageDialog(self.parent.winfo_toplevel(), book)
         self.parent.wait_window(dialog)
 
@@ -283,14 +434,29 @@ class LibraryPage:
             self._record_reading(book.current_page - old_page)
             self._save()
             self.refresh()
+            self._prompt_review_if_completed(index, was_finished)
+            self.refresh()
 
     def add_page(self, index):
         book = self.books[index]
+        was_finished = book.is_finished
+
+        if book.has_works:
+            added = book.add_work_page(1)
+            if added > 0:
+                self._record_reading(added)
+                self._save()
+                self.refresh()
+                self._prompt_review_if_completed(index, was_finished)
+                self.refresh()
+            return
 
         if book.current_page < book.total_pages:
             book.current_page += 1
             self._record_reading(1)
             self._save()
+            self.refresh()
+            self._prompt_review_if_completed(index, was_finished)
             self.refresh()
 
     def delete_book(self, index):
