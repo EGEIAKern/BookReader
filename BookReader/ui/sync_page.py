@@ -3,11 +3,14 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from services.cloud_provider import CloudProviderError
+from services.google_auth import authorize_google_drive, is_google_drive_authorized
 from services.sync_service import SyncService
 from storage.paths import get_data_dir
 from storage.sync_config import (
     DEFAULT_REMOTE_FILE,
     PROVIDER_FOLDER,
+    PROVIDER_GOOGLE_DRIVE,
     PROVIDER_NONE,
     PROVIDER_WEBDAV,
     SyncConfig,
@@ -78,7 +81,7 @@ class SyncPage(ctk.CTkFrame):
         self.provider_menu = ctk.CTkOptionMenu(
             body,
             variable=self.provider_var,
-            values=["Отключено", "Папка облака", "WebDAV"],
+            values=["Отключено", "Папка облака", "WebDAV", "Google Drive"],
             command=self._on_provider_change,
             fg_color=COLORS["bg_main"],
             button_color=COLORS["accent"],
@@ -104,14 +107,55 @@ class SyncPage(ctk.CTkFrame):
         self.webdav_pass_label = ctk.CTkLabel(body, text="Пароль", text_color=COLORS["text_main"])
         self.webdav_pass_entry = ctk.CTkEntry(body, show="*", fg_color=COLORS["bg_main"])
 
+        self.google_secrets_label = ctk.CTkLabel(
+            body,
+            text="OAuth-клиент Google",
+            text_color=COLORS["text_main"],
+        )
+        self.google_secrets_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.google_secrets_button = ctk.CTkButton(
+            body,
+            text="Обзор…",
+            width=90,
+            command=self._browse_google_secrets,
+            fg_color=COLORS["bg_main"],
+            hover_color=COLORS["accent_hover"],
+        )
+        self.google_connect_button = ctk.CTkButton(
+            body,
+            text="Подключить Google",
+            command=self._connect_google,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["bg_main"],
+        )
+        self.google_status_label = ctk.CTkLabel(
+            body,
+            text="",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=12),
+        )
+        self.google_folder_label = ctk.CTkLabel(
+            body,
+            text="ID папки Google Drive",
+            text_color=COLORS["text_main"],
+        )
+        self.google_folder_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.google_folder_hint = ctk.CTkLabel(
+            body,
+            text="Необязательно. Оставьте пустым для корня «Мой диск».",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=12),
+        )
+
         ctk.CTkLabel(body, text="Имя файла", text_color=COLORS["text_main"]).grid(
-            row=8, column=0, sticky="w", padx=20, pady=8,
+            row=9, column=0, sticky="w", padx=20, pady=8,
         )
         self.remote_file_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
-        self.remote_file_entry.grid(row=8, column=1, sticky="ew", padx=20, pady=8)
+        self.remote_file_entry.grid(row=9, column=1, sticky="ew", padx=20, pady=8)
 
         buttons = ctk.CTkFrame(body, fg_color="transparent")
-        buttons.grid(row=9, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 20))
+        buttons.grid(row=10, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 20))
         buttons.grid_columnconfigure((0, 1, 2), weight=1)
 
         ctk.CTkButton(
@@ -148,6 +192,7 @@ class SyncPage(ctk.CTkFrame):
             PROVIDER_NONE: "Отключено",
             PROVIDER_FOLDER: "Папка облака",
             PROVIDER_WEBDAV: "WebDAV",
+            PROVIDER_GOOGLE_DRIVE: "Google Drive",
         }
 
     def _provider_from_display(self, label: str) -> str:
@@ -165,9 +210,14 @@ class SyncPage(ctk.CTkFrame):
         self.webdav_user_entry.insert(0, config.webdav_username)
         self.webdav_pass_entry.delete(0, "end")
         self.webdav_pass_entry.insert(0, config.webdav_password)
+        self.google_secrets_entry.delete(0, "end")
+        self.google_secrets_entry.insert(0, config.google_client_secrets)
+        self.google_folder_entry.delete(0, "end")
+        self.google_folder_entry.insert(0, config.google_folder_id)
         self.remote_file_entry.delete(0, "end")
         self.remote_file_entry.insert(0, config.remote_file or DEFAULT_REMOTE_FILE)
         self._on_provider_change(self.provider_var.get())
+        self._refresh_google_status()
 
     def _collect_config(self) -> SyncConfig:
         provider = self._provider_from_display(self.provider_var.get())
@@ -183,6 +233,9 @@ class SyncPage(ctk.CTkFrame):
             webdav_url=self.webdav_url_entry.get().strip(),
             webdav_username=self.webdav_user_entry.get().strip(),
             webdav_password=password,
+            google_client_secrets=self.google_secrets_entry.get().strip(),
+            google_token_path=existing.google_token_path,
+            google_folder_id=self.google_folder_entry.get().strip(),
             last_sync_at=existing.last_sync_at,
         )
 
@@ -194,6 +247,10 @@ class SyncPage(ctk.CTkFrame):
             self.webdav_url_label, self.webdav_url_entry,
             self.webdav_user_label, self.webdav_user_entry,
             self.webdav_pass_label, self.webdav_pass_entry,
+            self.google_secrets_label, self.google_secrets_entry,
+            self.google_secrets_button, self.google_connect_button,
+            self.google_status_label, self.google_folder_label,
+            self.google_folder_entry, self.google_folder_hint,
         ):
             widget.grid_remove()
 
@@ -208,12 +265,77 @@ class SyncPage(ctk.CTkFrame):
             self.webdav_user_entry.grid(row=4, column=1, sticky="ew", padx=20, pady=8)
             self.webdav_pass_label.grid(row=5, column=0, sticky="w", padx=20, pady=8)
             self.webdav_pass_entry.grid(row=5, column=1, sticky="ew", padx=20, pady=8)
+        elif provider == PROVIDER_GOOGLE_DRIVE:
+            self.google_secrets_label.grid(row=2, column=0, sticky="w", padx=20, pady=8)
+            self.google_secrets_entry.grid(
+                row=2, column=1, sticky="ew", padx=(20, 0), pady=8,
+            )
+            self.google_secrets_button.grid(row=2, column=1, sticky="e", padx=20, pady=8)
+            self.google_connect_button.grid(row=3, column=1, sticky="w", padx=20, pady=8)
+            self.google_status_label.grid(
+                row=3, column=1, sticky="e", padx=20, pady=8,
+            )
+            self.google_folder_label.grid(row=4, column=0, sticky="w", padx=20, pady=8)
+            self.google_folder_entry.grid(row=4, column=1, sticky="ew", padx=20, pady=8)
+            self.google_folder_hint.grid(row=5, column=1, sticky="w", padx=20, pady=(0, 8))
+            self._refresh_google_status()
 
     def _browse_folder(self) -> None:
         path = filedialog.askdirectory(title="Выберите папку облака")
         if path:
             self.folder_entry.delete(0, "end")
             self.folder_entry.insert(0, path)
+
+    def _browse_google_secrets(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Выберите OAuth-клиент Google",
+            filetypes=[("JSON", "*.json"), ("Все файлы", "*.*")],
+        )
+        if path:
+            self.google_secrets_entry.delete(0, "end")
+            self.google_secrets_entry.insert(0, path)
+
+    def _refresh_google_status(self) -> None:
+        config = self._collect_config()
+        if not config.google_client_secrets.strip():
+            self.google_status_label.configure(text="Файл OAuth-клиента не выбран")
+            return
+        if is_google_drive_authorized(
+            config.google_client_secrets,
+            config.google_token_path,
+        ):
+            self.google_status_label.configure(text="Подключено")
+        else:
+            self.google_status_label.configure(text="Требуется авторизация")
+
+    def _connect_google(self) -> None:
+        config = self._collect_config()
+        if not config.google_client_secrets.strip():
+            messagebox.showerror(
+                "Google Drive",
+                "Сначала укажите файл OAuth-клиента Google (client_secret*.json).",
+            )
+            return
+
+        save_sync_config(config)
+        try:
+            authorize_google_drive(
+                config.google_client_secrets,
+                config.google_token_path,
+            )
+        except CloudProviderError as error:
+            messagebox.showerror("Google Drive", str(error))
+            return
+        except OSError as error:
+            messagebox.showerror("Google Drive", str(error))
+            return
+
+        self._refresh_google_status()
+        self._refresh_status()
+        messagebox.showinfo(
+            "Google Drive",
+            "Аккаунт Google подключён. Теперь можно синхронизировать.",
+        )
 
     def _save_settings(self) -> None:
         config = self._collect_config()

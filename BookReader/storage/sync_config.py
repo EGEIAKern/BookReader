@@ -11,6 +11,7 @@ SYNC_CONFIG_FILE = get_data_dir() / "sync_config.json"
 PROVIDER_NONE = "none"
 PROVIDER_FOLDER = "folder"
 PROVIDER_WEBDAV = "webdav"
+PROVIDER_GOOGLE_DRIVE = "google_drive"
 
 DEFAULT_REMOTE_FILE = "book_tracker_sync.json"
 
@@ -23,6 +24,9 @@ class SyncConfig:
     webdav_url: str = ""
     webdav_username: str = ""
     webdav_password: str = ""
+    google_client_secrets: str = ""
+    google_token_path: str = ""
+    google_folder_id: str = ""
     last_sync_at: str = ""
 
     def is_configured(self) -> bool:
@@ -33,6 +37,15 @@ class SyncConfig:
                 self.webdav_url.strip()
                 and self.webdav_username.strip()
             )
+        if self.provider == PROVIDER_GOOGLE_DRIVE:
+            if not self.google_client_secrets.strip():
+                return False
+            from services.google_auth import is_google_drive_authorized
+
+            return is_google_drive_authorized(
+                self.google_client_secrets,
+                self.google_token_path,
+            )
         return False
 
     def provider_label(self) -> str:
@@ -40,6 +53,7 @@ class SyncConfig:
             PROVIDER_NONE: "не настроено",
             PROVIDER_FOLDER: "папка облака",
             PROVIDER_WEBDAV: "WebDAV",
+            PROVIDER_GOOGLE_DRIVE: "Google Drive",
         }
         return labels.get(self.provider, self.provider)
 
@@ -59,6 +73,14 @@ def _apply_env_overrides(config: SyncConfig) -> SyncConfig:
 
     if remote_file := os.environ.get("BOOK_TRACKER_SYNC_FILE", "").strip():
         config.remote_file = remote_file
+
+    if secrets := os.environ.get("BOOK_TRACKER_GOOGLE_CLIENT_SECRETS", "").strip():
+        config.provider = PROVIDER_GOOGLE_DRIVE
+        config.google_client_secrets = secrets
+    if token_path := os.environ.get("BOOK_TRACKER_GOOGLE_TOKEN_PATH", "").strip():
+        config.google_token_path = token_path
+    if folder_id := os.environ.get("BOOK_TRACKER_GOOGLE_FOLDER_ID", "").strip():
+        config.google_folder_id = folder_id
 
     return config
 
@@ -83,6 +105,9 @@ def load_sync_config(config_file: Optional[Path] = None) -> SyncConfig:
         webdav_url=str(data.get("webdav_url", "")),
         webdav_username=str(data.get("webdav_username", "")),
         webdav_password=str(data.get("webdav_password", "")),
+        google_client_secrets=str(data.get("google_client_secrets", "")),
+        google_token_path=str(data.get("google_token_path", "")),
+        google_folder_id=str(data.get("google_folder_id", "")),
         last_sync_at=str(data.get("last_sync_at", "")),
     )
     return _apply_env_overrides(config)

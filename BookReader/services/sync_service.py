@@ -24,8 +24,38 @@ class SyncResult:
     uploaded: bool = False
 
 
-def _book_key(book: Book) -> tuple[str, str]:
-    return (book.title.strip().lower(), book.author.strip().lower())
+def _normalize_text(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
+
+
+def _authors_compatible(left: str, right: str) -> bool:
+    a = _normalize_text(left)
+    b = _normalize_text(right)
+    if not a or not b:
+        return not a and not b
+    if a == b:
+        return True
+    if a in b or b in a:
+        return True
+    a_parts = a.split()
+    b_parts = b.split()
+    return bool(a_parts and b_parts and a_parts[-1] == b_parts[-1])
+
+
+def books_match(left: Book, right: Book) -> bool:
+    if _normalize_text(left.title) != _normalize_text(right.title):
+        return False
+    return _authors_compatible(left.author, right.author)
+
+
+def _pick_author(left: str, right: str) -> str:
+    left = (left or "").strip()
+    right = (right or "").strip()
+    if not left:
+        return right
+    if not right:
+        return left
+    return left if len(left) >= len(right) else right
 
 
 def _work_key(work: Work) -> str:
@@ -82,7 +112,7 @@ def merge_book_pair(left: Book, right: Book) -> Book:
 
     return Book(
         title=primary.title or secondary.title,
-        author=primary.author or secondary.author,
+        author=_pick_author(primary.author, secondary.author),
         total_pages=max(left.total_pages, right.total_pages),
         current_page=current_page,
         description=primary.description or secondary.description,
@@ -92,32 +122,42 @@ def merge_book_pair(left: Book, right: Book) -> Book:
     )
 
 
+def _book_changed(before: Book, after: Book) -> bool:
+    return (
+        after.effective_current_page != before.effective_current_page
+        or after.review != before.review
+        or after.description != before.description
+        or len(after.works) != len(before.works)
+        or after.author != before.author
+    )
+
+
 def merge_books(local: list[Book], remote: list[Book]) -> tuple[list[Book], int, int]:
-    merged: dict[tuple[str, str], Book] = {}
+    merged: list[Book] = []
     added = 0
     updated = 0
 
-    for book in local:
-        merged[_book_key(book)] = book
+    def upsert(book: Book, *, from_remote: bool) -> None:
+        nonlocal added, updated
+        for index, existing in enumerate(merged):
+            if not books_match(existing, book):
+                continue
+            before = existing
+            merged[index] = merge_book_pair(existing, book)
+            if _book_changed(before, merged[index]):
+                updated += 1
+            return
 
-    for book in remote:
-        key = _book_key(book)
-        if key not in merged:
-            merged[key] = book
+        merged.append(book)
+        if from_remote:
             added += 1
-            continue
 
-        before = merged[key]
-        merged[key] = merge_book_pair(before, book)
-        if (
-            merged[key].effective_current_page != before.effective_current_page
-            or merged[key].review != before.review
-            or merged[key].description != before.description
-            or len(merged[key].works) != len(before.works)
-        ):
-            updated += 1
+    for book in local:
+        upsert(book, from_remote=False)
+    for book in remote:
+        upsert(book, from_remote=True)
 
-    return list(merged.values()), added, updated
+    return merged, added, updated
 
 
 def merge_reading_logs(

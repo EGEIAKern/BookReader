@@ -3,6 +3,7 @@ import unittest
 from models.book import Book
 from models.work import Work
 from services.sync_service import (
+    books_match,
     merge_book_pair,
     merge_books,
     merge_reading_logs,
@@ -34,6 +35,42 @@ class SyncServiceTests(unittest.TestCase):
         self.assertEqual(added, 0)
         self.assertEqual(updated, 1)
         self.assertEqual(merged[0].current_page, 250)
+
+    def test_merge_books_deduplicates_same_title_with_short_author(self):
+        full = Book(
+            "Евгений Онегин",
+            "Александр Сергеевич Пушкин",
+            364,
+            364,
+            works=[
+                Work("Евгений Онегин", 202, 202, "finished"),
+                Work("Повести Белкина", 80, 80, "finished"),
+            ],
+        )
+        short = Book(
+            "Евгений Онегин",
+            "Пушкин",
+            509,
+            80,
+            works=[Work("Пиковая дама", 80, 80, "finished")],
+        )
+
+        merged, added, updated = merge_books([full, short], [])
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].author, "Александр Сергеевич Пушкин")
+        self.assertEqual(len(merged[0].works), 3)
+        self.assertTrue(books_match(full, short))
+
+    def test_merge_books_deduplicates_local_and_remote_variants(self):
+        local = [Book("Евгений Онегин", "Пушкин", 509, 80)]
+        remote = [Book("Евгений Онегин", "Александр Сергеевич Пушкин", 364, 364)]
+
+        merged, added, updated = merge_books(local, remote)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].author, "Александр Сергеевич Пушкин")
+        self.assertEqual(merged[0].current_page, 364)
 
     def test_merge_reading_logs_sums_days(self):
         local = {"2026-06-16": 10, "2026-06-17": 5}

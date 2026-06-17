@@ -1,4 +1,5 @@
 import base64
+import io
 import os
 import tempfile
 import urllib.error
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from storage.sync_config import (
     PROVIDER_FOLDER,
+    PROVIDER_GOOGLE_DRIVE,
     PROVIDER_WEBDAV,
     SyncConfig,
 )
@@ -122,6 +124,91 @@ class WebDavCloudProvider(CloudProvider):
         self._request("PUT", self.remote_url, content.encode("utf-8"))
 
 
+class GoogleDriveCloudProvider(CloudProvider):
+
+    def __init__(
+        self,
+        credentials,
+        remote_file: str,
+        folder_id: str = "",
+    ):
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaInMemoryUpload
+
+        self._MediaInMemoryUpload = MediaInMemoryUpload
+        self.service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        self.remote_file = remote_file or "book_tracker_sync.json"
+        self.folder_id = folder_id.strip()
+
+    def _escape_query_value(self, value: str) -> str:
+        return value.replace("\\", "\\\\").replace("'", "\\'")
+
+    def _find_file_id(self) -> str | None:
+        query = (
+            f"name='{self._escape_query_value(self.remote_file)}' "
+            "and trashed=false"
+        )
+        if self.folder_id:
+            query += f" and '{self._escape_query_value(self.folder_id)}' in parents"
+
+        response = (
+            self.service.files()
+            .list(
+                q=query,
+                spaces="drive",
+                fields="files(id, name)",
+                pageSize=1,
+            )
+            .execute()
+        )
+        files = response.get("files", [])
+        if not files:
+            return None
+        return files[0]["id"]
+
+    def download(self) -> str | None:
+        file_id = self._find_file_id()
+        if not file_id:
+            return None
+
+        from googleapiclient.http import MediaIoBaseDownload
+
+        request = self.service.files().get_media(fileId=file_id)
+        buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(buffer, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+
+        payload = buffer.getvalue()
+        if not payload:
+            return None
+        return payload.decode("utf-8")
+
+    def upload(self, content: str) -> None:
+        media = self._MediaInMemoryUpload(
+            content.encode("utf-8"),
+            mimetype="application/json",
+            resumable=False,
+        )
+        file_id = self._find_file_id()
+        if file_id:
+            self.service.files().update(
+                fileId=file_id,
+                media_body=media,
+            ).execute()
+            return
+
+        metadata: dict[str, object] = {"name": self.remote_file}
+        if self.folder_id:
+            metadata["parents"] = [self.folder_id]
+        self.service.files().create(
+            body=metadata,
+            media_body=media,
+            fields="id",
+        ).execute()
+
+
 def build_cloud_provider(config: SyncConfig) -> CloudProvider:
     if config.provider == PROVIDER_FOLDER:
         if not config.folder_path.strip():
@@ -138,6 +225,25 @@ def build_cloud_provider(config: SyncConfig) -> CloudProvider:
             config.webdav_username,
             config.webdav_password,
             config.remote_file,
+        )
+
+    if config.provider == PROVIDER_GOOGLE_DRIVE:
+        from services.google_auth import load_google_credentials
+
+        if not config.google_client_secrets.strip():
+            raise CloudProviderError("Укажите файл OAuth-клиента Google")
+        credentials = load_google_credentials(
+            config.google_client_secrets,
+            config.google_token_path,
+        )
+        if credentials is None:
+            raise CloudProviderError(
+                "Google Drive не подключён. Нажмите «Подключить Google»."
+            )
+        return GoogleDriveCloudProvider(
+            credentials,
+            config.remote_file,
+            config.google_folder_id,
         )
 
     raise CloudProviderError("Облако не настроено")
