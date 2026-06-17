@@ -1,0 +1,271 @@
+from datetime import datetime
+from tkinter import filedialog, messagebox
+
+import customtkinter as ctk
+
+from services.sync_service import SyncService
+from storage.paths import get_data_dir
+from storage.sync_config import (
+    DEFAULT_REMOTE_FILE,
+    PROVIDER_FOLDER,
+    PROVIDER_NONE,
+    PROVIDER_WEBDAV,
+    SyncConfig,
+    load_sync_config,
+    save_sync_config,
+)
+from ui.colors import COLORS
+
+
+class SyncPage(ctk.CTkFrame):
+
+    def __init__(
+        self,
+        parent,
+        books,
+        reading_log,
+        *,
+        on_sync_complete=None,
+        on_persist_books=None,
+        on_persist_reading_log=None,
+    ):
+        super().__init__(parent, fg_color="transparent")
+        self.books = books
+        self.reading_log = reading_log
+        self.on_sync_complete = on_sync_complete
+        self.on_persist_books = on_persist_books
+        self.on_persist_reading_log = on_persist_reading_log
+
+        self.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 12))
+        header.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            header,
+            text="☁️ Облачная синхронизация",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=COLORS["text_main"],
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(
+            header,
+            text="Синхронизирует библиотеку и журнал чтения между ПК и телефоном.",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=13),
+        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+
+        body = ctk.CTkScrollableFrame(self, fg_color=COLORS["bg_card"], corner_radius=12)
+        body.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        body.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        self.status_label = ctk.CTkLabel(
+            body,
+            text="",
+            justify="left",
+            anchor="w",
+            text_color=COLORS["text_muted"],
+            font=ctk.CTkFont(size=13),
+        )
+        self.status_label.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 16))
+
+        ctk.CTkLabel(body, text="Способ", text_color=COLORS["text_main"]).grid(
+            row=1, column=0, sticky="w", padx=20, pady=8,
+        )
+        self.provider_var = ctk.StringVar(value="Отключено")
+        self.provider_menu = ctk.CTkOptionMenu(
+            body,
+            variable=self.provider_var,
+            values=["Отключено", "Папка облака", "WebDAV"],
+            command=self._on_provider_change,
+            fg_color=COLORS["bg_main"],
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+        )
+        self.provider_menu.grid(row=1, column=1, sticky="ew", padx=20, pady=8)
+
+        self.folder_label = ctk.CTkLabel(body, text="Папка облака", text_color=COLORS["text_main"])
+        self.folder_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.folder_button = ctk.CTkButton(
+            body,
+            text="Обзор…",
+            width=90,
+            command=self._browse_folder,
+            fg_color=COLORS["bg_main"],
+            hover_color=COLORS["accent_hover"],
+        )
+
+        self.webdav_url_label = ctk.CTkLabel(body, text="URL WebDAV", text_color=COLORS["text_main"])
+        self.webdav_url_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.webdav_user_label = ctk.CTkLabel(body, text="Логин", text_color=COLORS["text_main"])
+        self.webdav_user_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.webdav_pass_label = ctk.CTkLabel(body, text="Пароль", text_color=COLORS["text_main"])
+        self.webdav_pass_entry = ctk.CTkEntry(body, show="*", fg_color=COLORS["bg_main"])
+
+        ctk.CTkLabel(body, text="Имя файла", text_color=COLORS["text_main"]).grid(
+            row=8, column=0, sticky="w", padx=20, pady=8,
+        )
+        self.remote_file_entry = ctk.CTkEntry(body, fg_color=COLORS["bg_main"])
+        self.remote_file_entry.grid(row=8, column=1, sticky="ew", padx=20, pady=8)
+
+        buttons = ctk.CTkFrame(body, fg_color="transparent")
+        buttons.grid(row=9, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 20))
+        buttons.grid_columnconfigure((0, 1, 2), weight=1)
+
+        ctk.CTkButton(
+            buttons,
+            text="Сохранить настройки",
+            command=self._save_settings,
+            fg_color=COLORS["bg_main"],
+            hover_color=COLORS["accent_hover"],
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        ctk.CTkButton(
+            buttons,
+            text="Проверить",
+            command=self._test_connection,
+            fg_color=COLORS["bg_main"],
+            hover_color=COLORS["accent_hover"],
+        ).grid(row=0, column=1, sticky="ew", padx=6)
+
+        ctk.CTkButton(
+            buttons,
+            text="Синхронизировать",
+            command=self._sync_now,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_hover"],
+            text_color=COLORS["bg_main"],
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=2, sticky="ew", padx=(6, 0))
+
+        self._load_settings()
+        self._refresh_status()
+
+    def _provider_display_map(self) -> dict[str, str]:
+        return {
+            PROVIDER_NONE: "Отключено",
+            PROVIDER_FOLDER: "Папка облака",
+            PROVIDER_WEBDAV: "WebDAV",
+        }
+
+    def _provider_from_display(self, label: str) -> str:
+        reverse = {value: key for key, value in self._provider_display_map().items()}
+        return reverse.get(label, PROVIDER_NONE)
+
+    def _load_settings(self) -> None:
+        config = load_sync_config()
+        self.provider_var.set(self._provider_display_map().get(config.provider, "Отключено"))
+        self.folder_entry.delete(0, "end")
+        self.folder_entry.insert(0, config.folder_path)
+        self.webdav_url_entry.delete(0, "end")
+        self.webdav_url_entry.insert(0, config.webdav_url)
+        self.webdav_user_entry.delete(0, "end")
+        self.webdav_user_entry.insert(0, config.webdav_username)
+        self.webdav_pass_entry.delete(0, "end")
+        self.webdav_pass_entry.insert(0, config.webdav_password)
+        self.remote_file_entry.delete(0, "end")
+        self.remote_file_entry.insert(0, config.remote_file or DEFAULT_REMOTE_FILE)
+        self._on_provider_change(self.provider_var.get())
+
+    def _collect_config(self) -> SyncConfig:
+        provider = self._provider_from_display(self.provider_var.get())
+        existing = load_sync_config()
+        password = self.webdav_pass_entry.get().strip()
+        if not password:
+            password = existing.webdav_password
+
+        return SyncConfig(
+            provider=provider,
+            remote_file=self.remote_file_entry.get().strip() or DEFAULT_REMOTE_FILE,
+            folder_path=self.folder_entry.get().strip(),
+            webdav_url=self.webdav_url_entry.get().strip(),
+            webdav_username=self.webdav_user_entry.get().strip(),
+            webdav_password=password,
+            last_sync_at=existing.last_sync_at,
+        )
+
+    def _on_provider_change(self, _value: str) -> None:
+        provider = self._provider_from_display(self.provider_var.get())
+
+        for widget in (
+            self.folder_label, self.folder_entry, self.folder_button,
+            self.webdav_url_label, self.webdav_url_entry,
+            self.webdav_user_label, self.webdav_user_entry,
+            self.webdav_pass_label, self.webdav_pass_entry,
+        ):
+            widget.grid_remove()
+
+        if provider == PROVIDER_FOLDER:
+            self.folder_label.grid(row=2, column=0, sticky="w", padx=20, pady=8)
+            self.folder_entry.grid(row=2, column=1, sticky="ew", padx=(20, 0), pady=8)
+            self.folder_button.grid(row=2, column=1, sticky="e", padx=20, pady=8)
+        elif provider == PROVIDER_WEBDAV:
+            self.webdav_url_label.grid(row=3, column=0, sticky="w", padx=20, pady=8)
+            self.webdav_url_entry.grid(row=3, column=1, sticky="ew", padx=20, pady=8)
+            self.webdav_user_label.grid(row=4, column=0, sticky="w", padx=20, pady=8)
+            self.webdav_user_entry.grid(row=4, column=1, sticky="ew", padx=20, pady=8)
+            self.webdav_pass_label.grid(row=5, column=0, sticky="w", padx=20, pady=8)
+            self.webdav_pass_entry.grid(row=5, column=1, sticky="ew", padx=20, pady=8)
+
+    def _browse_folder(self) -> None:
+        path = filedialog.askdirectory(title="Выберите папку облака")
+        if path:
+            self.folder_entry.delete(0, "end")
+            self.folder_entry.insert(0, path)
+
+    def _save_settings(self) -> None:
+        config = self._collect_config()
+        save_sync_config(config)
+        self._refresh_status()
+        messagebox.showinfo("Облако", "Настройки сохранены")
+
+    def _test_connection(self) -> None:
+        config = self._collect_config()
+        ok, message = SyncService.test_connection(config)
+        if ok:
+            messagebox.showinfo("Облако", message)
+        else:
+            messagebox.showerror("Облако", message)
+
+    def _sync_now(self) -> None:
+        config = self._collect_config()
+        save_sync_config(config)
+
+        result = SyncService.sync(self.books, self.reading_log, config)
+
+        if result.success or result.books_after != result.books_before:
+            if self.on_persist_books:
+                self.on_persist_books(show_error=False)
+            if self.on_persist_reading_log:
+                self.on_persist_reading_log(show_error=False)
+
+        if self.on_sync_complete:
+            self.on_sync_complete()
+
+        self._refresh_status()
+
+        if result.success:
+            messagebox.showinfo("Синхронизация", result.message)
+        else:
+            messagebox.showerror("Синхронизация", result.message)
+
+    def _refresh_status(self) -> None:
+        config = load_sync_config()
+        last_sync = "ещё не синхронизировали"
+        if config.last_sync_at:
+            try:
+                moment = datetime.fromisoformat(config.last_sync_at.replace("Z", "+00:00"))
+                last_sync = moment.strftime("%d.%m.%Y %H:%M")
+            except ValueError:
+                last_sync = config.last_sync_at
+
+        self.status_label.configure(
+            text=(
+                f"Способ: {config.provider_label()}\n"
+                f"Последняя синхронизация: {last_sync}\n"
+                f"Книг в библиотеке: {len(self.books)}\n"
+                f"Локальные данные: {get_data_dir()}"
+            )
+        )
