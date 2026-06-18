@@ -1,5 +1,6 @@
 from datetime import datetime
 from tkinter import filedialog, messagebox
+import threading
 
 import customtkinter as ctk
 
@@ -158,31 +159,25 @@ class SyncPage(ctk.CTkFrame):
         buttons.grid(row=10, column=0, columnspan=2, sticky="ew", padx=20, pady=(16, 20))
         buttons.grid_columnconfigure((0, 1, 2), weight=1)
 
-        ctk.CTkButton(
-            buttons,
-            text="Сохранить настройки",
-            command=self._save_settings,
-            fg_color=COLORS["bg_main"],
-            hover_color=COLORS["accent_hover"],
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        # Сохраняем кнопки, чтобы управлять их состоянием
+        self.btn_save = ctk.CTkButton(
+            buttons, text="Сохранить настройки", command=self._save_settings,
+            fg_color=COLORS["bg_main"], hover_color=COLORS["accent_hover"],
+        )
+        self.btn_save.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
-        ctk.CTkButton(
-            buttons,
-            text="Проверить",
-            command=self._test_connection,
-            fg_color=COLORS["bg_main"],
-            hover_color=COLORS["accent_hover"],
-        ).grid(row=0, column=1, sticky="ew", padx=6)
+        self.btn_test = ctk.CTkButton(
+            buttons, text="Проверить", command=self._test_connection,
+            fg_color=COLORS["bg_main"], hover_color=COLORS["accent_hover"],
+        )
+        self.btn_test.grid(row=0, column=1, sticky="ew", padx=6)
 
-        ctk.CTkButton(
-            buttons,
-            text="Синхронизировать",
-            command=self._sync_now,
-            fg_color=COLORS["accent"],
-            hover_color=COLORS["accent_hover"],
-            text_color=COLORS["bg_main"],
-            font=ctk.CTkFont(weight="bold"),
-        ).grid(row=0, column=2, sticky="ew", padx=(6, 0))
+        self.btn_sync = ctk.CTkButton(
+            buttons, text="Синхронизировать", command=self._sync_now,
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+            text_color=COLORS["bg_main"], font=ctk.CTkFont(weight="bold"),
+        )
+        self.btn_sync.grid(row=0, column=2, sticky="ew", padx=(6, 0))
 
         self._load_settings()
         self._refresh_status()
@@ -308,6 +303,74 @@ class SyncPage(ctk.CTkFrame):
         else:
             self.google_status_label.configure(text="Требуется авторизация")
 
+    def _set_syncing_state(self, is_syncing: bool):
+        """Блокирует кнопки и меняет текст, пока идет сетевая операция"""
+        state = "disabled" if is_syncing else "normal"
+        self.btn_save.configure(state=state)
+        self.btn_test.configure(state=state)
+        self.btn_sync.configure(state=state)
+
+        if is_syncing:
+            self.btn_sync.configure(text="⏳ Синхронизация...")
+            self.status_label.configure(text="☁️ Идет обмен данными с облаком... Пожалуйста, подождите.")
+        else:
+            self.btn_sync.configure(text="Синхронизировать")
+            self._refresh_status()
+
+    def _sync_now(self) -> None:
+        config = self._collect_config()
+        save_sync_config(config)
+        self._set_syncing_state(True)
+
+        def _background_sync():
+            # Переименовал в sync_result, чтобы не путаться
+            sync_result = SyncService.sync(self.books, self.reading_log, config)
+            # Возвращаемся в главный поток для безопасного обновления UI
+            self.after(0, lambda: self._finish_sync(sync_result))
+
+        threading.Thread(target=_background_sync, daemon=True).start()
+
+    def _save_settings(self) -> None:
+        """Сохраняет настройки синхронизации"""
+        config = self._collect_config()
+        save_sync_config(config)
+        self._refresh_status()
+        self._refresh_google_status()
+        messagebox.showinfo("Настройки", "Настройки синхронизации сохранены.")
+
+    def _finish_sync(self, sync_result):
+        self._set_syncing_state(False)
+
+        if sync_result.success or sync_result.books_after != sync_result.books_before:
+            if self.on_persist_books:
+                self.on_persist_books(show_error=False)
+            if self.on_persist_reading_log:
+                self.on_persist_reading_log(show_error=False)
+            if self.on_sync_complete:
+                self.on_sync_complete()
+
+        if sync_result.success:
+            messagebox.showinfo("Синхронизация", sync_result.message)
+        else:
+            messagebox.showerror("Синхронизация", sync_result.message)
+
+    def _test_connection(self) -> None:
+        config = self._collect_config()
+        self.btn_test.configure(state="disabled", text="⏳ Проверка...")
+
+        def _background_test():
+            ok, message = SyncService.test_connection(config)
+            self.after(0, lambda: self._finish_test(ok, message))
+
+        threading.Thread(target=_background_test, daemon=True).start()
+
+    def _finish_test(self, ok, message):
+        self.btn_test.configure(state="normal", text="Проверить")
+        if ok:
+            messagebox.showinfo("Облако", message)
+        else:
+            messagebox.showerror("Облако", message)
+
     def _connect_google(self) -> None:
         config = self._collect_config()
         if not config.google_client_secrets.strip():
@@ -318,60 +381,29 @@ class SyncPage(ctk.CTkFrame):
             return
 
         save_sync_config(config)
-        try:
-            authorize_google_drive(
-                config.google_client_secrets,
-                config.google_token_path,
-            )
-        except CloudProviderError as error:
-            messagebox.showerror("Google Drive", str(error))
-            return
-        except OSError as error:
-            messagebox.showerror("Google Drive", str(error))
-            return
+        self.google_connect_button.configure(state="disabled", text="⏳ Ожидание браузера...")
 
+        def _background_auth():
+            try:
+                authorize_google_drive(
+                    config.google_client_secrets,
+                    config.google_token_path,
+                )
+                self.after(0, self._on_auth_success)
+            except Exception as error:
+                self.after(0, lambda: self._on_auth_error(str(error)))
+
+        threading.Thread(target=_background_auth, daemon=True).start()
+
+    def _on_auth_success(self):
+        self.google_connect_button.configure(state="normal", text="Подключить Google")
         self._refresh_google_status()
         self._refresh_status()
-        messagebox.showinfo(
-            "Google Drive",
-            "Аккаунт Google подключён. Теперь можно синхронизировать.",
-        )
+        messagebox.showinfo("Google Drive", "Аккаунт Google подключен. Теперь можно синхронизировать.")
 
-    def _save_settings(self) -> None:
-        config = self._collect_config()
-        save_sync_config(config)
-        self._refresh_status()
-        messagebox.showinfo("Облако", "Настройки сохранены")
-
-    def _test_connection(self) -> None:
-        config = self._collect_config()
-        ok, message = SyncService.test_connection(config)
-        if ok:
-            messagebox.showinfo("Облако", message)
-        else:
-            messagebox.showerror("Облако", message)
-
-    def _sync_now(self) -> None:
-        config = self._collect_config()
-        save_sync_config(config)
-
-        result = SyncService.sync(self.books, self.reading_log, config)
-
-        if result.success or result.books_after != result.books_before:
-            if self.on_persist_books:
-                self.on_persist_books(show_error=False)
-            if self.on_persist_reading_log:
-                self.on_persist_reading_log(show_error=False)
-
-        if self.on_sync_complete:
-            self.on_sync_complete()
-
-        self._refresh_status()
-
-        if result.success:
-            messagebox.showinfo("Синхронизация", result.message)
-        else:
-            messagebox.showerror("Синхронизация", result.message)
+    def _on_auth_error(self, error_msg):
+        self.google_connect_button.configure(state="normal", text="Подключить Google")
+        messagebox.showerror("Google Drive", error_msg)
 
     def _refresh_status(self) -> None:
         config = load_sync_config()

@@ -168,7 +168,8 @@ def merge_reading_logs(
     for day, pages in remote.items():
         if pages <= 0:
             continue
-        merged[day] = merged.get(day, 0) + pages
+        # ИСПРАВЛЕНИЕ: Берем максимум, а не сумму
+        merged[day] = max(merged.get(day, 0), pages)
     return merged
 
 
