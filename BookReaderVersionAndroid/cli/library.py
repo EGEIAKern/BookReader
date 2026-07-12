@@ -1,5 +1,4 @@
 from pathlib import Path
-
 from models.book import Book, normalize_url
 from models.work import WORK_STATUS_LABELS, WORK_STATUSES, Work
 from services.export_service import export_books_to_csv, export_books_to_excel
@@ -26,7 +25,6 @@ from cli.display import (
 
 
 class LibraryScreen:
-
     def __init__(self, books: list[Book], reading_log: dict[str, int]):
         self.books = books
         self.reading_log = reading_log
@@ -36,9 +34,8 @@ class LibraryScreen:
             clear_screen()
             print_header(f"📚 Библиотека ({len(self.books)} книг)")
             self._list_books()
-
             choice = input(
-                "\n[a] добавить  [n] номер книги  [s] поиск  [e] экспорт  [0] назад\n> "
+                "\n[a] добавить [n] номер книги [s] поиск [e] экспорт [0] назад\n> "
             ).strip().lower()
 
             if choice in {"0", "q", "назад"}:
@@ -58,9 +55,8 @@ class LibraryScreen:
                     self._book_menu(index)
                 else:
                     print_error("Неверный номер")
-                    pause()
+                pause()
                 continue
-
             print_error("Неизвестная команда")
             pause()
 
@@ -74,31 +70,29 @@ class LibraryScreen:
 
     def _list_books(self, items: list[tuple[int, Book]] | None = None) -> None:
         rows = items if items is not None else list(enumerate(self.books))
-
         if not rows:
-            print("\n  Список пуст. Добавьте первую книгу.")
+            print("\n Список пуст. Добавьте первую книгу.")
             return
-
         print()
         for display_index, (book_index, book) in enumerate(rows, start=1):
             author = book.author or "автор не указан"
             status = "✓" if book.is_finished else " "
             print(
-                f"  {display_index:>2}. [{status}] {book.title}\n"
-                f"      {author} · {self._format_pages(book)} ({book.progress}%)\n"
-                f"      {progress_bar(book.progress)}"
+                f" {display_index:>2}. [{status}] {book.title}\n"
+                f" {author} · {self._format_pages(book)} ({book.progress}%)\n"
+                f" {progress_bar(book.progress)}"
             )
             if book.has_works:
                 finished = sum(1 for work in book.active_works if work.is_finished)
                 total_active = len(book.active_works)
-                print(f"      📖 Произведения: {finished}/{total_active} прочитано")
-                for work in book.works:
-                    status_label = WORK_STATUS_LABELS.get(work.status, work.status)
-                    if work.counts_toward_progress:
-                        pages = f"{work.current_page}/{work.total_pages} стр."
-                    else:
-                        pages = f"{work.total_pages} стр."
-                    print(f"         • {work.title} — {pages} · {status_label}")
+                print(f" 📖 Произведения: {finished}/{total_active} прочитано")
+            for work in book.works:
+                status_label = WORK_STATUS_LABELS.get(work.status, work.status)
+                if work.counts_toward_progress:
+                    pages = f"{work.current_page}/{work.total_pages} стр."
+                else:
+                    pages = f"{work.total_pages} стр."
+                print(f" • {work.title} — {pages} · {status_label}")
 
     def _search(self) -> None:
         query = ask_text("\nПоиск (название или автор)")
@@ -125,7 +119,6 @@ class LibraryScreen:
         if book is None:
             pause()
             return
-
         if book.effective_current_page > 0:
             ReadingLogService.record_pages(self.reading_log, book.effective_current_page)
         self.books.append(book)
@@ -140,31 +133,28 @@ class LibraryScreen:
             clear_screen()
             print_header(f"📖 {book.title}")
             author = book.author or "автор не указан"
-            print(f"\n  Автор: {author}")
+            print(f"\n Автор: {author}")
             if book.description:
-                print(f"  Описание: {book.description}")
+                print(f" Описание: {book.description}")
             if book.marketplace_url:
-                print(f"  Ссылка: {book.marketplace_url}")
+                print(f" Ссылка: {book.marketplace_url}")
             if book.review:
-                print(f"  Мнение: {book.review}")
-            print(f"  Прогресс: {self._format_pages(book)} ({book.progress}%)")
-            print(f"  {progress_bar(book.progress)}")
-
+                print(f" Мнение: {book.review}")
+            print(f" Прогресс: {self._format_pages(book)} ({book.progress}%)")
+            print(f" {progress_bar(book.progress)}")
             if book.has_works:
-                print("\n  Произведения:")
+                print("\n Произведения:")
                 for work_index, work in enumerate(book.works, start=1):
                     status_label = WORK_STATUS_LABELS.get(work.status, work.status)
                     if work.counts_toward_progress:
                         pages = f"{work.current_page}/{work.total_pages} стр."
                     else:
                         pages = f"{work.total_pages} стр."
-                    print(f"    {work_index}. {work.title} — {pages} · {status_label}")
-
+                    print(f" {work_index}. {work.title} — {pages} · {status_label}")
             choice = input(
-                "\n[+] +1 стр.  [p] прогресс  [w] произведения  "
-                "[e] изменить  [d] удалить  [0] назад\n> "
+                "\n[+] +1 стр. [p] Быстре добавление проч. страниц [w] произведения "
+                "[e] изменить [d] удалить [0] назад\n> "
             ).strip().lower()
-
             if choice in {"0", "q"}:
                 return
             if choice in {"+", "п", "plus"}:
@@ -177,7 +167,6 @@ class LibraryScreen:
                 self._edit_book(index)
             elif choice in {"d", "у"}:
                 self._delete_book(index)
-                return
             else:
                 print_error("Неизвестная команда")
                 pause()
@@ -186,7 +175,6 @@ class LibraryScreen:
         book = self.books[index]
         was_finished = book.is_finished
         old_page = book.effective_current_page
-
         if book.has_works:
             added = book.add_work_page(1)
             if added <= 0:
@@ -199,12 +187,10 @@ class LibraryScreen:
             self._prompt_review_if_completed(index, was_finished)
             pause()
             return
-
         if book.current_page >= book.total_pages:
             print_error("Книга уже прочитана")
             pause()
             return
-
         book.current_page += 1
         ReadingLogService.record_pages(self.reading_log, 1)
         self._save()
@@ -215,28 +201,210 @@ class LibraryScreen:
     def _set_page(self, index: int) -> None:
         book = self.books[index]
         was_finished = book.is_finished
-
+        
+        # Для книг с произведениями предлагаем выбор
         if book.has_works:
-            self._manage_works(index)
+            self._set_page_for_works(index)
             return
-
+        
+        # Для обычных книг
         page = ask_int(
-            f"Текущая страница (0–{book.total_pages})",
+            f"До какой страницы прочитали (0–{book.total_pages})",
             min_value=0,
             max_value=book.total_pages,
         )
         if page is None:
             pause()
             return
-
+        
         old_page = book.current_page
+        if page < old_page:
+            print_error(f"Нельзя уменьшить прогресс (было {old_page})")
+            pause()
+            return
+        
         book.current_page = page
         delta = book.current_page - old_page
         if delta > 0:
             ReadingLogService.record_pages(self.reading_log, delta)
+            print_success(f"Добавлено {delta} стр. Прогресс: {book.progress}%")
+        else:
+            print_success(f"Прогресс: {book.progress}%")
+        
         self._save()
-        print_success(f"Прогресс: {book.progress}%")
         self._prompt_review_if_completed(index, was_finished)
+        pause()
+
+    def _set_page_for_works(self, index: int) -> None:
+        """Задать страницу для книги с произведениями"""
+        book = self.books[index]
+        was_finished = book.is_finished
+        old_page = book.effective_current_page
+        
+        while True:
+            clear_screen()
+            print_header(f"📖 Задать страницу — {book.title}")
+            print(f"\n Текущий прогресс: {self._format_pages(book)} ({book.progress}%)")
+            print(f" {progress_bar(book.progress)}")
+            
+            print("\n Выберите способ:")
+            print("  0. Задать общую страницу для всей книги")
+            for work_index, work in enumerate(book.works, start=1):
+                status_label = WORK_STATUS_LABELS.get(work.status, work.status)
+                if work.counts_toward_progress:
+                    pages = f"{work.current_page}/{work.total_pages} стр."
+                else:
+                    pages = f"{work.total_pages} стр."
+                print(f" {work_index}. {work.title} — {pages} · {status_label}")
+            print(" [0] Назад")
+            
+            choice = input("\n Ваш выбор: ").strip()
+            
+            if choice in {"0", "q", "назад"}:
+                return
+            
+            if choice.isdigit():
+                work_index = int(choice) - 1
+                if work_index == -1:
+                    # Задать общую страницу для всей книги
+                    self._set_page_for_whole_book(index)
+                    return
+                elif 0 <= work_index < len(book.works):
+                    # Задать страницу для конкретного произведения
+                    self._set_page_for_work(index, work_index)
+                    return
+                else:
+                    print_error("Неверный номер")
+                    pause()
+            else:
+                print_error("Неверный ввод")
+                pause()
+
+    def _set_page_for_whole_book(self, index: int) -> None:
+        """Задать общую страницу для всей книги с произведениями"""
+        book = self.books[index]
+        was_finished = book.is_finished
+        old_page = book.effective_current_page
+        
+        clear_screen()
+        print_header(f"📖 Общая страница — {book.title}")
+        print(f"\n Текущий прогресс: {self._format_pages(book)} ({book.progress}%)")
+        
+        # Показываем распределение страниц по произведениям
+        print("\n Произведения:")
+        for work in book.works:
+            if work.counts_toward_progress:
+                print(f" • {work.title}: {work.current_page}/{work.total_pages} стр.")
+        
+        page = ask_int(
+            f"\nДо какой страницы прочитали (общий прогресс, 0–{book.progress_total_pages})",
+            min_value=0,
+            max_value=book.progress_total_pages,
+        )
+        if page is None:
+            pause()
+            return
+        
+        if page < old_page:
+            print_error(f"Нельзя уменьшить прогресс (было {old_page})")
+            pause()
+            return
+        
+        # Распределяем страницы по произведениям
+        pages_to_add = page - old_page
+        remaining = pages_to_add
+        
+        print(f"\n Распределение {pages_to_add} стр. по произведениям:")
+        
+        for work in book.works:
+            if remaining <= 0:
+                break
+            
+            if not work.counts_toward_progress:
+                continue
+            
+            available = work.total_pages - work.current_page
+            if available <= 0:
+                continue
+            
+            to_add = min(remaining, available)
+            work.current_page += to_add
+            remaining -= to_add
+            
+            if work.current_page >= work.total_pages and work.total_pages > 0:
+                work.set_status("finished")
+            elif work.current_page > 0 and work.status == "planned":
+                work.set_status("reading")
+            
+            print(f" ✓ {work.title}: +{to_add} стр. ({work.current_page}/{work.total_pages})")
+        
+        book.sync_from_works()
+        delta = book.effective_current_page - old_page
+        
+        if delta > 0:
+            ReadingLogService.record_pages(self.reading_log, delta)
+            print_success(f"\n Добавлено {delta} стр. Прогресс: {book.progress}%")
+        else:
+            print_success(f"\n Прогресс: {book.progress}%")
+        
+        self._save()
+        self._prompt_review_if_completed(index, was_finished)
+        pause()
+
+    def _set_page_for_work(self, book_index: int, work_index: int) -> None:
+        """Задать страницу для конкретного произведения"""
+        book = self.books[book_index]
+        work = book.works[work_index]
+        was_finished = book.is_finished
+        old_page = book.effective_current_page
+        
+        if not work.counts_toward_progress:
+            print_error("Произведение пропущено")
+            pause()
+            return
+        
+        clear_screen()
+        print_header(f"📄 {work.title}")
+        status_label = WORK_STATUS_LABELS.get(work.status, work.status)
+        print(f"\n Статус: {status_label}")
+        print(f" Прогресс: {work.current_page}/{work.total_pages} ({work.progress}%)")
+        print(f" {progress_bar(work.progress)}")
+        
+        page = ask_int(
+            f"\nДо какой страницы прочитали (0–{work.total_pages})",
+            min_value=0,
+            max_value=work.total_pages,
+        )
+        if page is None:
+            pause()
+            return
+        
+        if page < work.current_page:
+            print_error(f"Нельзя уменьшить прогресс (было {work.current_page})")
+            pause()
+            return
+        
+        old_work_page = work.current_page
+        work.current_page = page
+        
+        if work.current_page >= work.total_pages and work.total_pages > 0:
+            work.set_status("finished")
+        elif work.current_page > 0 and work.status in ("planned", "finished"):
+            work.set_status("reading")
+        
+        book.sync_from_works()
+        delta = book.effective_current_page - old_page
+        
+        if delta > 0:
+            ReadingLogService.record_pages(self.reading_log, delta)
+            print_success(f"\n Добавлено {delta} стр. Прогресс произведения: {work.progress}%")
+        else:
+            print_success(f"\n Прогресс произведения: {work.progress}%")
+        
+        print(f" Общий прогресс книги: {book.progress}%")
+        
+        self._save()
+        self._prompt_review_if_completed(book_index, was_finished)
         pause()
 
     def _manage_works(self, index: int) -> None:
@@ -245,62 +413,54 @@ class LibraryScreen:
             print_error("Произведения не добавлены. Используйте «изменить» для настройки.")
             pause()
             return
-
         was_finished = book.is_finished
         old_page = book.effective_current_page
-
         while True:
             clear_screen()
             print_header(f"📖 Произведения — {book.title}")
-            print(f"\n  Прогресс книги: {book.progress}% · {self._format_pages(book)}")
-
+            print(f"\n Прогресс книги: {book.progress}% · {self._format_pages(book)}")
             for work_index, work in enumerate(book.works, start=1):
                 status_label = WORK_STATUS_LABELS.get(work.status, work.status)
                 if work.counts_toward_progress:
                     pages = f"{work.current_page}/{work.total_pages} стр. · {work.progress}%"
                 else:
                     pages = f"{work.total_pages} стр. · пропущено"
-                print(f"\n  {work_index}. {work.title}")
-                print(f"     {pages} · {status_label}")
-
+                print(f"\n{work_index}. {work.title}")
+                print(f" {pages} · {status_label}")
             choice = input(
-                "\n[n] номер произведения  [0] назад\n> "
+                "\n[n] номер произведения [0] назад\n> "
             ).strip().lower()
-
             if choice in {"0", "q", "назад"}:
                 delta = book.effective_current_page - old_page
                 if delta > 0:
                     ReadingLogService.record_pages(self.reading_log, delta)
-                    self._save()
+                self._save()
                 self._prompt_review_if_completed(index, was_finished)
                 return
-
             if choice.isdigit():
                 work_index = int(choice) - 1
                 if 0 <= work_index < len(book.works):
                     self._work_menu(index, work_index)
                 else:
                     print_error("Неверный номер")
-                    pause()
+                pause()
 
     def _work_menu(self, book_index: int, work_index: int) -> None:
         book = self.books[book_index]
         work = book.works[work_index]
-
         while True:
             clear_screen()
             print_header(f"📄 {work.title}")
             status_label = WORK_STATUS_LABELS.get(work.status, work.status)
-            print(f"\n  Статус: {status_label}")
+            print(f"\n Статус: {status_label}")
             if work.counts_toward_progress:
-                print(f"  Прогресс: {work.current_page}/{work.total_pages} ({work.progress}%)")
-                print(f"  {progress_bar(work.progress)}")
-
+                print(f" Прогресс: {work.current_page}/{work.total_pages} ({work.progress}%)")
+                print(f" {progress_bar(work.progress)}")
             print(
-                "\n  1. +1 страница\n"
-                "  2. Задать страницу\n"
-                "  3. Изменить статус\n"
-                "  0. Назад"
+                "\n 1. +1 страница\n"
+                " 2. Задать страницу\n"
+                " 3. Изменить статус\n"
+                " 0. Назад"
             )
             choice = ask_int("\nПункт", min_value=0, max_value=3)
             if choice is None:
@@ -338,14 +498,17 @@ class LibraryScreen:
                 if page is None:
                     pause()
                     continue
+                old_work_page = work.current_page
+                if page < old_work_page:
+                    print_error(f"Нельзя уменьшить прогресс (было {old_work_page})")
+                    pause()
+                    continue
                 work.current_page = page
                 if work.current_page >= work.total_pages and work.total_pages > 0:
                     work.set_status("finished")
                 elif work.current_page > 0:
                     if work.status in ("planned", "finished"):
                         work.set_status("reading")
-                elif work.status == "finished":
-                    work.set_status("planned")
                 book.sync_from_works()
                 self._save()
                 print_success(f"Прогресс: {work.progress}%")
@@ -357,13 +520,13 @@ class LibraryScreen:
 
     def _change_work_status(self, work: Work) -> None:
         options = list(WORK_STATUS_LABELS.values())
-        print("\n  Статусы:")
+        print("\n Статусы:")
         for index, label in enumerate(options, start=1):
-            print(f"    {index}. {label}")
+            print(f" {index}. {label}")
         choice = ask_int("Номер статуса", min_value=1, max_value=len(options))
         if choice is None:
             return
-        status = WORK_STATUSES[choice - 1]
+        status = WORK_STATUSES[choice-1]
         work.set_status(status)
         print_success(f"Статус: {WORK_STATUS_LABELS[status]}")
         pause()
@@ -372,7 +535,6 @@ class LibraryScreen:
         book = self.books[index]
         was_finished = book.is_finished
         old_page = book.effective_current_page
-
         clear_screen()
         print_header(f"✏️ Изменить — {book.title}")
         try:
@@ -384,7 +546,6 @@ class LibraryScreen:
         if updated is None:
             pause()
             return
-
         delta = updated.effective_current_page - old_page
         if delta > 0:
             ReadingLogService.record_pages(self.reading_log, delta)
@@ -396,30 +557,23 @@ class LibraryScreen:
 
     def _prompt_new_book_wizard(self) -> Book | None:
         total_steps = 3
-
         clear_screen()
         print_header("➕ Новая книга")
         print_form_step(1, total_steps, "Основное")
         print_hint("Название обязательно. Автор можно указать позже.")
-
         title = ask_text("Название", required=True)
         if title is None:
             return None
-
         author = ask_text("Автор", hint="Enter — без автора") or ""
-
         clear_screen()
         print_header("➕ Новая книга")
         print_form_step(2, total_steps, "Объём и прогресс")
         print_hint("Укажите общее число страниц и сколько уже прочитано.")
-
         total = ask_int("Всего страниц", min_value=1)
         if total is None:
             return None
-
         works: list[Work] = []
         current_page = 0
-
         if ask_yes_no("Разбить книгу на произведения (главы, тома)?"):
             works = self._prompt_works(total)
             if works is None:
@@ -432,15 +586,12 @@ class LibraryScreen:
                 hint=f"Enter — начать с 0 из {total}",
             )
             current_page = 0 if current is None else current
-
         clear_screen()
         print_header("➕ Новая книга")
         print_form_step(3, total_steps, "Дополнительно")
         print_hint("Эти поля необязательны — можно пропустить Enter.")
-
         description = ask_text("Описание") or ""
         marketplace = normalize_url(ask_text("Ссылка на маркетплейс") or "")
-
         book = Book(
             title=title,
             author=author,
@@ -451,7 +602,6 @@ class LibraryScreen:
             works=works,
         )
         book.validate_works()
-
         if not self._confirm_new_book(book):
             return None
         return book
@@ -460,36 +610,30 @@ class LibraryScreen:
         clear_screen()
         print_header("➕ Новая книга")
         print_section("Проверьте данные")
-
         print_key_value("Название", book.title)
         print_key_value("Автор", book.author)
         print_key_value("Страницы", self._format_pages(book))
-        print(f"  {'Прогресс':<14} {book.progress:.0f}%")
-        print(f"  {'':14} {progress_bar(book.progress)}")
-
+        print(f" {'Прогресс':<14}{book.progress:.0f}%")
+        print(f" {'':14}{progress_bar(book.progress)}")
         if book.description:
             print_key_value("Описание", book.description)
         if book.marketplace_url:
             print_key_value("Ссылка", book.marketplace_url)
-
         if book.has_works:
             print_section(f"Произведения ({len(book.works)})")
             for work in book.works:
                 status_label = WORK_STATUS_LABELS.get(work.status, work.status)
-                print(f"    • {work.title} — {work.total_pages} стр. · {status_label}")
-
+                print(f" • {work.title} — {work.total_pages} стр. · {status_label}")
         print()
         return ask_yes_no("Сохранить книгу?", default=True)
 
     def _prompt_book_form(self, book: Book | None = None) -> Book | None:
         if book is None:
             return self._prompt_new_book_wizard()
-
         print_section("Основное")
         title = ask_text("Название", required=True, default=book.title) or book.title
         if not title:
             return None
-
         author = ask_text("Автор", default=book.author or None)
         if author is None:
             author = book.author
@@ -501,7 +645,6 @@ class LibraryScreen:
             total = book.total_pages
         else:
             total = total_raw
-
         description = ask_text("Описание", default=book.description or None)
         if description is None:
             description = book.description
@@ -552,21 +695,18 @@ class LibraryScreen:
         existing: list[Work] | None = None,
     ) -> list[Work] | None:
         works = list(existing or [])
-
         while True:
             clear_screen()
             print_header("📖 Произведения в книге")
             allocated = sum(work.total_pages for work in works)
             remaining = max(book_total_pages - allocated, 0)
-
             print_section("Распределение страниц")
-            print(f"  {horizontal_bar(allocated, book_total_pages, width=28)}")
-            print(f"  {allocated} / {book_total_pages} стр.", end="")
+            print(f" {horizontal_bar(allocated, book_total_pages, width=28)}")
+            print(f" {allocated} / {book_total_pages} стр.", end="")
             if remaining:
-                print(f"  · осталось {remaining}")
+                print(f" · осталось {remaining}")
             else:
                 print()
-
             if not works:
                 print_hint("Добавьте произведения — главы, тома или отдельные части.")
             else:
@@ -574,18 +714,16 @@ class LibraryScreen:
                 for index, work in enumerate(works, start=1):
                     status_label = WORK_STATUS_LABELS.get(work.status, work.status)
                     print(
-                        f"  {index:>2}. {work.title}\n"
-                        f"      {work.current_page}/{work.total_pages} стр. · {status_label}"
+                        f" {index:>2}. {work.title}\n"
+                        f" {work.current_page}/{work.total_pages} стр. · {status_label}"
                     )
-
             print_shortcuts(
                 ("a", "добавить"),
                 ("n", "номер"),
                 ("0", "готово"),
                 ("x", "отмена"),
             )
-            choice = input("\n  > ").strip().lower()
-
+            choice = input("\n > ").strip().lower()
             if choice in {"x", "отмена", "cancel"}:
                 return None
             if choice in {"0", "г", "done"}:
@@ -607,7 +745,7 @@ class LibraryScreen:
                 work_index = int(choice) - 1
                 if 0 <= work_index < len(works):
                     print_shortcuts(("e", "изменить"), ("d", "удалить"))
-                    action = input("\n  > ").strip().lower()
+                    action = input("\n > ").strip().lower()
                     if action in {"d", "у"}:
                         works.pop(work_index)
                     elif action in {"e", "и"}:
@@ -617,8 +755,8 @@ class LibraryScreen:
                         )
                         if updated:
                             works[work_index] = updated
-                else:
-                    print_error("Неверный номер")
+                    else:
+                        print_error("Неверный номер")
                     pause()
 
     def _prompt_single_work(
@@ -629,16 +767,13 @@ class LibraryScreen:
         clear_screen()
         print_header("➕ Произведение" if work is None else "✏️ Произведение")
         print_hint(f"В книге доступно до {book_total_pages} страниц суммарно.")
-
         print_section("Основное")
         title = ask_text("Название", required=True)
         if not title:
             return None
-
         total = ask_int("Всего страниц", min_value=1)
         if total is None:
             return None
-
         print_section("Прогресс")
         default_current = work.current_page if work else 0
         current = ask_int(
@@ -648,10 +783,9 @@ class LibraryScreen:
             hint=f"Enter — {default_current}",
         )
         current_page = default_current if current is None else current
-
         print_section("Статус")
         for index, label in enumerate(WORK_STATUS_LABELS.values(), start=1):
-            print(f"    {index}. {label}")
+            print(f" {index}. {label}")
         default_status = work.status if work else "planned"
         default_index = WORK_STATUSES.index(default_status) + 1
         status_choice = ask_int(
@@ -671,7 +805,7 @@ class LibraryScreen:
                 review = ask_text("Мнение", required=False) or ""
                 if review:
                     book.review = review
-                    self._save()
+                self._save()
 
     def _delete_book(self, index: int) -> None:
         book = self.books[index]
@@ -687,19 +821,16 @@ class LibraryScreen:
             print_error("Нет книг для экспорта")
             pause()
             return
-
         print_header("📥 Экспорт")
-        print("  1. CSV (без зависимостей)")
-        print("  2. Excel (нужен openpyxl)")
-        print("  0. Назад")
+        print(" 1. CSV (без зависимостей)")
+        print(" 2. Excel (нужен openpyxl)")
+        print(" 0. Назад")
         choice = ask_int("Формат", min_value=0, max_value=2)
         if not choice:
             return
-
         default_name = "book_tracker_library.csv" if choice == 1 else "book_tracker_library.xlsx"
         path_str = ask_text(f"Путь к файлу [{default_name}]") or default_name
         path = Path(path_str).expanduser()
-
         try:
             if choice == 1:
                 saved = export_books_to_csv(self.books, path)
@@ -709,12 +840,10 @@ class LibraryScreen:
             print_error(str(error))
             pause()
             return
-
         print_success(f"Сохранено: {saved}")
         pause()
 
     def _save(self) -> None:
         save_books(self.books)
         from storage.reading_log import save_reading_log
-
         save_reading_log(self.reading_log)
