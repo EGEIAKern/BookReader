@@ -531,29 +531,31 @@ class LibraryScreen:
         print_success(f"Статус: {WORK_STATUS_LABELS[status]}")
         pause()
 
-    def _edit_book(self, index: int) -> None:
-        book = self.books[index]
-        was_finished = book.is_finished
-        old_page = book.effective_current_page
-        clear_screen()
-        print_header(f"✏️ Изменить — {book.title}")
-        try:
-            updated = self._prompt_book_form(book)
-        except ValueError as error:
-            print_error(str(error))
-            pause()
-            return
-        if updated is None:
-            pause()
-            return
-        delta = updated.effective_current_page - old_page
-        if delta > 0:
-            ReadingLogService.record_pages(self.reading_log, delta)
-        self.books[index] = updated
-        self._save()
-        print_success("Книга обновлена")
-        self._prompt_review_if_completed(index, was_finished)
+ def _edit_book(self, index: int) -> None:
+    book = self.books[index]
+    was_finished = book.is_finished
+    old_page = book.effective_current_page
+
+    clear_screen()
+    print_header(f"✏️ Изменить — {book.title}")
+    try:
+        updated = self._prompt_book_form(book)
+    except ValueError as error:
+        print_error(str(error))
         pause()
+        return
+    if updated is None:
+        pause()
+        return  
+    self.books[index] = updated
+    self._save()
+    delta = updated.effective_current_page - old_page
+    if delta > 0:
+        ReadingLogService.record_pages(self.reading_log, delta)
+    
+    print_success("Книга обновлена")
+    self._prompt_review_if_completed(index, was_finished)
+    pause()
 
     def _prompt_new_book_wizard(self) -> Book | None:
         total_steps = 3
