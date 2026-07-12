@@ -124,11 +124,13 @@ def merge_reading_logs(
     local: dict[str, int],
     remote: dict[str, int],
 ) -> dict[str, int]:
+    # Берём максимум для каждого дня, а не сумму
+    # Это предотвращает удвоение данных при повторных синхронизациях
     merged = dict(local)
     for day, pages in remote.items():
         if pages <= 0:
             continue
-        merged[day] = merged.get(day, 0) + pages
+        merged[day] = max(merged.get(day, 0), pages)
     return merged
 
 
