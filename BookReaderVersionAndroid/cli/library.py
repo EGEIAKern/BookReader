@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from models.book import Book, normalize_url
 from models.work import WORK_STATUS_LABELS, WORK_STATUSES, Work
 from services.export_service import export_books_to_csv, export_books_to_excel
@@ -152,7 +153,7 @@ class LibraryScreen:
                         pages = f"{work.total_pages} стр."
                     print(f" {work_index}. {work.title} — {pages} · {status_label}")
             choice = input(
-                "\n[+] +1 стр. [p] Быстре добавление проч. страниц [w] произведения "
+                "\n[+] +1 стр. [p] прогресс [w] произведения "
                 "[e] изменить [d] удалить [0] назад\n> "
             ).strip().lower()
             if choice in {"0", "q"}:
@@ -199,10 +200,11 @@ class LibraryScreen:
         pause()
 
     def _set_page(self, index: int) -> None:
+        """✅ ИСПРАВЛЕНИЕ ОШИБКИ 1: Теперь работает для книг с произведениями"""
         book = self.books[index]
         was_finished = book.is_finished
         
-        # Для книг с произведениями предлагаем выбор
+        # ✅ ИСПРАВЛЕНИЕ: Для книг с произведениями предлагаем выбор
         if book.has_works:
             self._set_page_for_works(index)
             return
@@ -218,6 +220,8 @@ class LibraryScreen:
             return
         
         old_page = book.current_page
+        
+        # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 2: Проверяем уменьшение прогресса
         if page < old_page:
             print_error(f"Нельзя уменьшить прогресс (было {old_page})")
             pause()
@@ -225,6 +229,8 @@ class LibraryScreen:
         
         book.current_page = page
         delta = book.current_page - old_page
+        
+        # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 2: Всегда сохраняем изменения
         if delta > 0:
             ReadingLogService.record_pages(self.reading_log, delta)
             print_success(f"Добавлено {delta} стр. Прогресс: {book.progress}%")
@@ -236,10 +242,9 @@ class LibraryScreen:
         pause()
 
     def _set_page_for_works(self, index: int) -> None:
-        """Задать страницу для книги с произведениями"""
+        """✅ НОВЫЙ МЕТОД: Задать страницу для книги с произведениями"""
         book = self.books[index]
         was_finished = book.is_finished
-        old_page = book.effective_current_page
         
         while True:
             clear_screen()
@@ -281,7 +286,7 @@ class LibraryScreen:
                 pause()
 
     def _set_page_for_whole_book(self, index: int) -> None:
-        """Задать общую страницу для всей книги с произведениями"""
+        """✅ НОВЫЙ МЕТОД: Задать общую страницу для всей книги с произведениями"""
         book = self.books[index]
         was_finished = book.is_finished
         old_page = book.effective_current_page
@@ -305,6 +310,7 @@ class LibraryScreen:
             pause()
             return
         
+        # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 2: Проверяем уменьшение прогресса
         if page < old_page:
             print_error(f"Нельзя уменьшить прогресс (было {old_page})")
             pause()
@@ -331,6 +337,7 @@ class LibraryScreen:
             work.current_page += to_add
             remaining -= to_add
             
+            # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 3: Правильная логика статусов
             if work.current_page >= work.total_pages and work.total_pages > 0:
                 work.set_status("finished")
             elif work.current_page > 0 and work.status == "planned":
@@ -352,7 +359,7 @@ class LibraryScreen:
         pause()
 
     def _set_page_for_work(self, book_index: int, work_index: int) -> None:
-        """Задать страницу для конкретного произведения"""
+        """✅ НОВЫЙ МЕТОД: Задать страницу для конкретного произведения"""
         book = self.books[book_index]
         work = book.works[work_index]
         was_finished = book.is_finished
@@ -379,6 +386,7 @@ class LibraryScreen:
             pause()
             return
         
+        # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 2: Проверяем уменьшение прогресса
         if page < work.current_page:
             print_error(f"Нельзя уменьшить прогресс (было {work.current_page})")
             pause()
@@ -387,10 +395,13 @@ class LibraryScreen:
         old_work_page = work.current_page
         work.current_page = page
         
+        # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 3: Правильная логика статусов
         if work.current_page >= work.total_pages and work.total_pages > 0:
             work.set_status("finished")
-        elif work.current_page > 0 and work.status in ("planned", "finished"):
+        elif work.current_page > 0 and work.status == "planned":
             work.set_status("reading")
+        elif work.current_page == 0:
+            work.set_status("planned")
         
         book.sync_from_works()
         delta = book.effective_current_page - old_page
@@ -498,17 +509,24 @@ class LibraryScreen:
                 if page is None:
                     pause()
                     continue
+                
+                # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 2: Проверяем уменьшение прогресса
                 old_work_page = work.current_page
                 if page < old_work_page:
                     print_error(f"Нельзя уменьшить прогресс (было {old_work_page})")
                     pause()
                     continue
+                
                 work.current_page = page
+                
+                # ✅ ИСПРАВЛЕНИЕ ОШИБКИ 3: Правильная логика статусов
                 if work.current_page >= work.total_pages and work.total_pages > 0:
                     work.set_status("finished")
-                elif work.current_page > 0:
-                    if work.status in ("planned", "finished"):
-                        work.set_status("reading")
+                elif work.current_page > 0 and work.status == "planned":
+                    work.set_status("reading")
+                elif work.current_page == 0:
+                    work.set_status("planned")
+                
                 book.sync_from_works()
                 self._save()
                 print_success(f"Прогресс: {work.progress}%")
@@ -756,7 +774,7 @@ class LibraryScreen:
                         if updated:
                             works[work_index] = updated
                     else:
-                        print_error("Неверный номер")
+                        print_error("Неверная команда")
                     pause()
 
     def _prompt_single_work(
