@@ -77,6 +77,28 @@ def merge_book_pair(left: Book, right: Book) -> Book:
         )
 
     current_page = primary.current_page
+    if works and primary.has_works:
+        current_page = 0
+
+    return Book(
+        title=primary.title or secondary.title,
+        author=primary.author or secondary.author,
+        total_pages=max(left.total_pages, right.total_pages),
+        current_page=current_page,
+        description=primary.description or secondary.description,
+        marketplace_url=primary.marketplace_url or secondary.marketplace_url,
+        review=primary.review or secondary.review,
+        works=works,
+    )
+
+    works: list[Work] = []
+    if primary.has_works or secondary.has_works:
+        works = _merge_works(
+            list(primary.works),
+            list(secondary.works),
+        )
+
+    current_page = primary.current_page
     if works:
         current_page = 0
 
