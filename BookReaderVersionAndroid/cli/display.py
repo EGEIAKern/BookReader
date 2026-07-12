@@ -14,8 +14,7 @@ def pause(message: str = "Нажмите Enter...") -> None:
         input(message)
     except (EOFError, KeyboardInterrupt):
         print()
-        raise
-
+        
 
 def print_header(title: str) -> None:
     width = max(len(title) + 4, 40)
