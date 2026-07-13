@@ -120,8 +120,6 @@ class LibraryScreen:
         if book is None:
             pause()
             return
-        if book.effective_current_page > 0:
-            ReadingLogService.record_pages(self.reading_log, book.effective_current_page)
         self.books.append(book)
         self._save()
         print_success(f"«{book.title}» добавлена в библиотеку")
